@@ -6,18 +6,21 @@ TextLayer *text_layer;
 int sentFlag = 1;
 int oldVal = 0;
 
-uint32_t valArr[30];
-uint32_t timeStampArr[30];
+uint32_t valArr[35];
+uint32_t timeStampArr[35];
 int valIndex = 0;
+uint64_t firstTimestamp = 0;
 
 static bool send_data_to_phone(){
+	
+	DictionaryIterator *iter;
+	int i = 0;
+	
 	while(!sentFlag){
 		
 	}
 	
-	DictionaryIterator *iter;
-
-	int i = 0;
+	
   app_message_outbox_begin(&iter);
 	
 	if (!iter) {
@@ -34,8 +37,9 @@ static bool send_data_to_phone(){
   app_message_outbox_send();
 	
 	valIndex = 0;
-	for(int i=0;i<25;++i){
+	for(i=0;i<25;++i){
 		valArr[i] = 0;
+		timeStampArr[i] = 0;
 	}
 
   return true;
@@ -43,42 +47,38 @@ static bool send_data_to_phone(){
 
 static void data_handler(AccelData *data, uint32_t num_samples){
 	
-	int tmpValArr[25];
+	//int tmpValArr[25];
+	unsigned i = 0;
+	int valx = 0;
+	int valy = 0;
+	int valz = 0;
+	uint32_t result = 0;
+	uint64_t timestampDiff = 0;
 	
-	for(int i = 1;i<25;i++){
+	for(i = 1;i<num_samples;i++){
 		
-		//int val1 = (abs(data[i-1].x) + abs(data[i-1].y) + abs(data[i-1].z));
-		//int val2 = (abs(data[i].x) + abs(data[i].y) + abs(data[i].z));
+		if(firstTimestamp == 0){
+			firstTimestamp = data[i].timestamp;
+		}
 		
-		int val1 = (data[i-1].x + data[i-1].y + data[i-1].z);
-		int val2 = (data[i].x + data[i].y + data[i].z);
 		
-		tmpValArr[i] = val2 - val1;
+		valx = abs(data[i].x - data[i-1].x);
+		valy = abs(data[i].y - data[i-1].y);
+		valz = abs(data[i].z - data[i-1].z);
+		//valx = abs(data[i].x);
+		//valy = abs(data[i].y);
+		//valz = abs(data[i].z);
 		
-		int valx = abs(data[i].x - data[i-1].x);
-		int valy = abs(data[i].y - data[i-1].y);
-		int valz = abs(data[i].z - data[i-1].z);
-		
-		if(abs(tmpValArr[i]) > 50){
+		if((valx+valy+valz) > 50){
 			
-			//uint32_t result = abs((uint32_t)data[i].x);
-			uint32_t result = 0;
 			result = (uint32_t)(valx & 0b0000001111111111) << 20 | (uint32_t)(valy & 0b0000001111111111) << 10 | (uint32_t)(valz & 0b0000001111111111);
 			
 			valArr[valIndex] = result;
-			//valArr[valIndex+1] = valx;
-			//valArr[valIndex+2] = valy;
-			//valArr[valIndex+3] = valz;
-			
-			unsigned long hi, lo;
 
-			memcpy(&lo, &data[i].timestamp, sizeof lo);
-			memcpy(&hi, (char *) &data[i].timestamp + sizeof lo, sizeof hi);
+			timestampDiff =  data[i].timestamp - firstTimestamp;
 			
-			timeStampArr[valIndex] = abs(lo);
-			//timeStampArr[valIndex+1] = abs(lo+1);
-			//timeStampArr[valIndex+2] = abs(lo+2);
-			//timeStampArr[valIndex+3] = abs(lo+3);
+			timeStampArr[valIndex] = (uint32_t)(timestampDiff & 0b0000000000000000000000000000000011111111111111111111111111111111);
+
 			valIndex++;
 			
 			if(valIndex > 25){
@@ -97,17 +97,19 @@ static void out_failed_handler(DictionaryIterator *failed, AppMessageResult reas
 }
 
 static void out_succeded_handler(DictionaryIterator *iterator, void *context) {
-  APP_LOG(APP_LOG_LEVEL_DEBUG, "App Message Sent! %i", heap_bytes_free());
+  APP_LOG(APP_LOG_LEVEL_DEBUG, "App Message Sent! %i", (int)app_message_outbox_size_maximum());
 	sentFlag = 1;
 }
 
 void handle_init(void) {
+	int i = 0;
+	
 	// Create a window and text layer
 	window = window_create();
 	text_layer = text_layer_create(GRect(0, 0, 144, 154));
 	
 	// Set the text, font, and text alignment
-	text_layer_set_text(text_layer, "Hi, I'm a Pebble!");
+	text_layer_set_text(text_layer, "SleepTrack");
 	text_layer_set_font(text_layer, fonts_get_system_font(FONT_KEY_GOTHIC_28_BOLD));
 	text_layer_set_text_alignment(text_layer, GTextAlignmentCenter);
 	
@@ -122,25 +124,32 @@ void handle_init(void) {
 	app_message_register_outbox_sent(out_succeded_handler);
   
   // Init buffers
-  app_message_open(1024, 1024);
+  app_message_open(app_message_inbox_size_maximum(), app_message_outbox_size_maximum());
 	
 	valIndex = 0;
-	for(int i=0;i<25;++i){
+	for(i=0;i<25;++i){
 		valArr[i] = 0;
+		timeStampArr[i] = 0;
 	}
 	
 	int num_samples = 25;
 	accel_data_service_subscribe(num_samples, data_handler);
-	accel_service_set_sampling_rate(ACCEL_SAMPLING_25HZ);
+	accel_service_set_sampling_rate(ACCEL_SAMPLING_10HZ);
 	
 	// App Logging!
 	APP_LOG(APP_LOG_LEVEL_DEBUG, "Just pushed a window!");
 }
 
 void handle_deinit(void) {
+	while(!sentFlag){
+		
+	}
+	app_message_deregister_callbacks();
+	accel_data_service_unsubscribe();
+	
 	// Destroy the text layer
 	text_layer_destroy(text_layer);
-	accel_data_service_unsubscribe();
+	
 	// Destroy the window
 	window_destroy(window);
 }
