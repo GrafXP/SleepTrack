@@ -20,6 +20,8 @@ static bool send_data_to_phone(){
 		
 	}
 	
+	//testcomment
+	
 	
   app_message_outbox_begin(&iter);
 	
