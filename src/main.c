@@ -1,6 +1,8 @@
 #include <pebble.h>
 #include <math.h>
 
+//test
+
 Window *window;
 TextLayer *text_layer;
 int sentFlag = 1;
